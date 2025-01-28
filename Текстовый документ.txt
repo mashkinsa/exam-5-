@@ -1,0 +1,378 @@
+"""views"""
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect, get_object_or_404
+
+from .forms import ProductForm, RegistrationForm, EditProfileForm, OrderForm
+from .models import Product, Order, UserProfile
+from django.contrib.auth import login, authenticate, logout
+
+
+def index(request):
+    if request.user.is_authenticated:
+        products = Product.objects.all().order_by('-created_at')[:5]  # последние 5 товаров
+        return render(request, 'index.html', {'products': products})
+    else:
+        return redirect('login')
+
+
+def product_list(request):
+    products = Product.objects.all()
+    return render(request, 'product_list.html', {'products': products})
+
+
+@login_required
+def product_detail(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+
+    if request.method == 'POST':
+        order = Order(user=request.user, product=product)
+        order.save()
+        return redirect('profile')
+
+    return render(request, 'product_detail.html', {'product': product})
+
+
+#Регистрация
+def register(request):
+    if request.method == 'POST':
+        form = RegistrationForm(request.POST, request.FILES)
+        if form.is_valid():
+            user = form.save()
+            UserProfile.objects.create(user=user, avatar=form.cleaned_data['avatar'])
+            return redirect('index')
+    else:
+        form = RegistrationForm()
+    return render(request, 'register.html', {'form': form})
+
+
+def login_view(request):
+    if request.method == 'POST':
+        username = request.POST['username']
+        password = request.POST['password']
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('index')
+    return render(request, 'login.html')
+
+
+@login_required
+def logout_view(request):
+    logout(request)
+    return redirect('index')
+
+
+def profile(request):
+    user = request.user
+    orders = Order.objects.filter(user=user)
+    return render(request, 'profile.html', {'user': user, 'orders': orders})
+
+
+@login_required
+def edit_profile(request):
+    user = request.user
+    user_profile = user.userprofile
+    if request.method == 'POST':
+        form = EditProfileForm(request.POST, request.FILES, instance=user)
+        if form.is_valid():
+            form.save()
+            user_profile.avatar = request.FILES.get('avatar', user_profile.avatar)
+            user_profile.save()
+            return redirect('profile')
+    else:
+        form = EditProfileForm(instance=user)
+    return render(request, 'edit_profile.html', {'form': form})
+
+
+@login_required
+def create_product(request):
+    if request.method == 'POST':
+        form = ProductForm(request.POST, request.FILES)
+        if form.is_valid():
+            product = form.save(commit=False)
+            product.save()
+            return redirect('index')  # Переход на страницу со списком постов
+    else:
+        form = ProductForm()
+    return render(request, 'create_product.html', {'form': form})
+
+"""urls/myShop"""
+from django.conf.urls.static import static
+from django.urls import path
+
+from .views import index, register, login_view, product_detail, product_list, profile, logout_view, edit_profile, create_product
+from Shop import settings
+
+urlpatterns = [
+    path('', index, name='index'),
+    path('register/', register, name='register'),
+    path('login/', login_view, name='login'),
+    path('profile/', profile, name='profile'),
+    path('edit_profile/', edit_profile, name='edit_profile'),
+    path('create_product/', create_product, name='create_product'),
+    path('logout/', logout_view, name='logout'),
+    path('service/', product_list, name='product_list'),
+    path('service/<int:product_id>/', product_detail, name='product_detail'),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+"""models"""
+from django.db import models
+from django.contrib.auth.models import User
+
+
+class Product(models.Model):
+    name = models.CharField(max_length=100, blank=False)
+    description = models.TextField()
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    image = models.ImageField(upload_to='products/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Order(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    ordered_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} ordered {self.product.name}"
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='userprofile')
+    avatar = models.ImageField(upload_to='user_avatars', blank=True)
+
+    def __str__(self):
+        return f'{self.user} Profile'
+"""forms"""
+from .models import Product, Order
+from django import forms
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth.models import User
+
+
+class RegistrationForm(UserCreationForm):
+    avatar = forms.ImageField()
+
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'avatar', 'password1')
+
+
+class EditProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'avatar')
+
+    avatar = forms.ImageField(label="Аватар", required=False)
+
+
+class LoginForm(AuthenticationForm):
+    pass
+
+class DeleteAccountForm(forms.Form):
+    confirm_delete = forms.BooleanField(label='Удалить аккаунт', required=True)
+
+
+class ProductForm(forms.ModelForm):
+    image = forms.ImageField(required=True)
+
+    class Meta:
+        model = Product
+        fields = ['name', 'description', 'image', 'price']
+
+class OrderForm(forms.ModelForm):
+    class Meta:
+        model = Order
+        fields = ['product']
+"""settings"""
+INSTALLED_APPS = ['myShop']
+STATIC_URL = 'static/'
+
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = '/media/'
+"""urls"""
+from django.contrib import admin
+from django.urls import path, include
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('myShop.urls'))]
+"""base.html"""
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{title}}{% endblock %}</title>
+</head>
+<body>
+<header>
+    <nav>
+        <a href="{% url 'index' %}">Главная</a>
+        <a href="{% url 'product_list' %}">Товары</a>
+        {% if request.user.is_superuser %}
+            <a href="{% url 'create_product' %}">Добавить товар</a>
+        {% endif %}
+        {% if user.is_authenticated %}
+            <a href="{% url 'profile' %}">Профиль</a>
+            <a href="{% url 'logout' %}">Выход</a>
+        {% else %}
+            <a href="{% url 'register' %}">Регистрация</a>
+            <a href="{% url 'login' %}">Вход</a>
+        {% endif %}
+    </nav>
+</header>
+<main>
+    {% block content %}
+    <!-- Содержимое страниц будет вставлено сюда -->
+    {% endblock %}
+</main>
+
+</body>
+</html>
+
+"""create_product"""
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Добавить продукт</h1>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Создать</button>
+</form>
+{% endblock %}
+"""edit_profile"""
+{% extends 'base.html' %}
+
+{% block title %}Редактирование профиля{% endblock %}
+
+{% block content %}
+<h2>Редактирование профиля</h2>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Сохранить изменения</button>
+</form>
+{% endblock %}
+"""index"""
+{% extends 'base.html' %}
+
+{% block title %}Главная страница{% endblock %}
+
+{% block content %}
+<h2>Последние товары</h2>
+<p>Описание наших товаров и услуг. Мы предлагаем качественные продукты, которые помогут вам в вашей деятельности.</p>
+<ul>
+    {% for product in products %}
+        <li>
+            <img src="{{ product.image.url }}" alt="{{ product.name }}" width="200">
+            <a href="{% url 'product_detail' product.id %}">{{ product.name }}</a>
+        </li>
+    {% endfor %}
+</ul>
+{% endblock %}
+"""login"""
+{% extends 'base.html' %}
+
+{% block title %}Вход{% endblock %}
+
+{% block content %}
+<h2>Вход</h2>
+<form method="post">
+    {% csrf_token %}
+    <div>
+        <label for="username">Имя пользователя:</label>
+        <input type="text" name="username" required>
+    </div>
+    <div>
+        <label for="password">Пароль:</label>
+        <input type="password" name="password" required>
+    </div>
+    <button type="submit">Войти</button>
+</form>
+{% endblock %}
+"""logout"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+</body>
+</html>
+"""product_detail"""
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name }}{% endblock %}
+
+{% block content %}
+<h2>Продукт: {{ product.name }}</h2>
+<img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 300px; height: auto;">
+<p>Описание: {{ product.description }}</p>
+<p>Цена: {{ product.price }} руб.</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit">Заказать</button>
+</form>
+{% endblock %}
+"""product_list"""
+{% extends 'base.html' %}
+
+{% block title %}Все товары{% endblock %}
+
+{% block content %}
+<h2>Все товары</h2>
+<ul>
+    {% for product in products %}
+        <li>
+            <img src="{{ product.image.url }}" alt="{{ product.name }}" width = 200">
+            <a href="{% url 'product_detail' product.id %}">{{ product.name }}</a>
+        </li>
+    {% endfor %}
+</ul>
+{% endblock %}
+"""profile"""
+{% extends 'base.html' %}
+
+{% block title %}Профиль{% endblock %}
+
+{% block content %}
+<h1>Логин: {{ user.username }}</h1>
+<img src="{{ user.userprofile.avatar.url }}" alt="{{ user.username }}" width="100">
+<p>Email: {{ user.email }}</p>
+<a href="{% url 'edit_profile' %}">Редактировать профиль</a>
+
+<h3>Ваши заказы:</h3>
+<ul>
+    {% for order in orders %}
+
+        <li>
+            <img src="{{ order.product.image.url }}" alt="{{ product.name }}" width="200">
+            {{ order.product.name }} - Заказано {{ order.ordered_at }}
+        </li>
+    {% empty %}
+        <li>У вас нет заказов.</li>
+    {% endfor %}
+</ul>
+{% endblock %}
+"""register"""
+{% extends 'base.html' %}
+
+{% block title %}Регистрация{% endblock %}
+
+{% block content %}
+<h2>Регистрация</h2>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Зарегистрироваться</button>
+</form>
+{% endblock %}
