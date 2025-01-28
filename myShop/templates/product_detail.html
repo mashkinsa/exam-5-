@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name }}{% endblock %}
+
+{% block content %}
+<h2>Продукт: {{ product.name }}</h2>
+<img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 300px; height: auto;">
+<p>Описание: {{ product.description }}</p>
+<p>Цена: {{ product.price }} руб.</p>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit">Заказать</button>
+</form>
+{% endblock %}

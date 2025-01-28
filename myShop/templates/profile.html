@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block title %}Профиль{% endblock %}
+
+{% block content %}
+<h1>Логин: {{ user.username }}</h1>
+<img src="{{ user.userprofile.avatar.url }}" alt="{{ user.username }}" width="100">
+<p>Email: {{ user.email }}</p>
+<a href="{% url 'edit_profile' %}">Редактировать профиль</a>
+
+<h3>Ваши заказы:</h3>
+<ul>
+    {% for order in orders %}
+
+        <li>
+            <img src="{{ order.product.image.url }}" alt="{{ product.name }}" width="200">
+            {{ order.product.name }} - Заказано {{ order.ordered_at }}
+        </li>
+    {% empty %}
+        <li>У вас нет заказов.</li>
+    {% endfor %}
+</ul>
+{% endblock %}
